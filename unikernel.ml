@@ -11,25 +11,31 @@ let msg = "0000 0001 0002 0003 0004 0005 0006 0007 0008 0009 0010 0011 0012 0013
 
 let mlen = String.length msg
 
-let usage_msg = "enter iperf server address exactly as:\nx.x.x.x p\n"
+let usage_msg = "enter iperf command:
+    1- target <server address> <server port>
+    2- info\n"
 let usage_mlen = String.length usage_msg
 
 let iperf_rx_port = 5001
 let cmd_port = 8080
 
-module Main (C:CONSOLE) (S:STACKV4) = struct
+module Main (C:CONSOLE)(N: NETWORK)(S:STACKV4) = struct
 
+  (* module E = Ethif.Make(N) *)
   module T  = S.TCPV4
   module CH = Channel.Make(T)
 
-  let start console s =
+  let start console n0 s =
 
     let buf = Cstruct.sub (Io_page.(to_cstruct (get 1))) 0 mlen in
     Cstruct.blit_from_string msg 0 buf 0 mlen;
 
     let usage_buf = Cstruct.sub (Io_page.(to_cstruct (get 1))) 0 usage_mlen in
     Cstruct.blit_from_string usage_msg 0 usage_buf 0 usage_mlen;
-
+(*
+    let start_stat = ref (N.get_stats_counters n) in
+    let final_stat = ref (N.get_stats_counters n) in
+*)
     Lwt_list.iter_s (fun ip -> C.log_s console 
       (sprintf "IP address: %s\n" 
         (Ipaddr.V4.to_string ip))) (S.IPV4.get_ip (S.ipv4 s))
@@ -53,25 +59,69 @@ module Main (C:CONSOLE) (S:STACKV4) = struct
       in
 
       let rec cmd_loop n f =
-        fun () ->
         T.read f
         >>= function
         | `Ok b ->
-          T.write f b >> 
-          let msg_s = (Cstruct.to_string 
+          let msg = (Cstruct.to_string 
                        (Cstruct.sub b 0 ((Cstruct.len b) - 2))) in
-          let i = String.index msg_s ' ' in
-          let d_ip_s = String.sub msg_s 0 i in
-          let d_prt_s = String.sub msg_s (i+1) ((String.length msg_s) - i-1) in
-          let dst = (Ipaddr.V4.of_string_exn d_ip_s) in
-          let dst_p = int_of_string d_prt_s in
-          let _ = sendth dst dst_p in
-          C.log_s console
-            (yellow "attempting iperf connection to: %s:%s\n" 
-               d_ip_s d_prt_s
-            )
-          >>=
-          cmd_loop (n + (Cstruct.len b)) f
+          let i = if String.contains msg ' ' then String.index msg ' ' else (String.length msg) in
+          let cmd = String.sub msg 0 i in
+          (
+          match cmd with
+          | "target" ->
+            let msg_s = String.sub msg (i+1) ((String.length msg) - i-1) in
+            let i = String.index msg_s ' ' in
+            let d_ip_s = String.sub msg_s 0 i in
+            let d_prt_s = String.sub msg_s (i+1) ((String.length msg_s) - i-1) in
+            let dst = (Ipaddr.V4.of_string_exn d_ip_s) in
+            let dst_p = int_of_string d_prt_s in
+            
+            let _ = N.reset_stats_counters n0 in
+            
+            let _ = sendth dst dst_p in
+            C.log_s console
+              (yellow "attempting iperf connection to: %s:%s\n" 
+                d_ip_s d_prt_s
+              )
+            >>
+            cmd_loop (n + (Cstruct.len b)) f
+            
+          | "stats" ->
+            C.log_s console (yellow "information requested\n")
+            >>
+            let stats = N.get_stats_counters n0 in
+            let msg_stat = String.concat " "
+            	["rx_bytes: "; Int64.to_string stats.rx_bytes; "\n";
+            	 "rx_pkts: " ; Int32.to_string stats.rx_pkts;  "\n";
+            	 "tx_bytes: "; Int64.to_string stats.tx_bytes; "\n";
+            	 "tx_pkts: " ; Int32.to_string stats.tx_pkts;  "\n"] in
+            C.log_s console (yellow "%s\n" msg_stat) >>
+            let stats_buf = Cstruct.sub (Io_page.(to_cstruct (get 1))) 0 (String.length msg_stat) in
+            Cstruct.blit_from_string msg_stat 0 stats_buf 0 (String.length msg_stat);
+            T.write f stats_buf >>
+            cmd_loop (n + (Cstruct.len b)) f 
+            
+          | "reset" ->
+            C.log_s console (yellow "Reset statistics requested\n")
+            >>
+            let _ = N.reset_stats_counters n0 in
+            let stats = N.get_stats_counters n0 in
+            let msg_stat = String.concat " "
+            	["rx_bytes: "; Int64.to_string stats.rx_bytes; "\n";
+            	 "rx_pkts: " ; Int32.to_string stats.rx_pkts;  "\n";
+            	 "tx_bytes: "; Int64.to_string stats.tx_bytes; "\n";
+            	 "tx_pkts: " ; Int32.to_string stats.tx_pkts;  "\n"] in
+            C.log_s console (yellow "%s\n" msg_stat) >>
+            let stats_buf = Cstruct.sub (Io_page.(to_cstruct (get 1))) 0 (String.length msg_stat) in
+            Cstruct.blit_from_string msg_stat 0 stats_buf 0 (String.length msg_stat);
+            T.write f stats_buf >>
+            cmd_loop (n + (Cstruct.len b)) f 
+
+          | _ ->
+            C.log_s console (red "uknown command - read: %d bytes " n)
+            >> cmd_loop (n + (Cstruct.len b)) f
+            
+          )
         | `Eof -> T.close f >>
            C.log_s console
              (red "cmd connection closed - read: %d bytes " n)
@@ -87,7 +137,7 @@ module Main (C:CONSOLE) (S:STACKV4) = struct
         >>
         C.log_s console
           (green "%s" usage_msg)
-      >>=
+      >>
       cmd_loop 0 flow
     );
 

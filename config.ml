@@ -1,6 +1,6 @@
 open Mirage
 
-let handler = foreign "Unikernel.Main" (console @-> stackv4 @-> job)
+let handler = foreign "Unikernel.Main" (console @-> network @-> stackv4 @-> job)
 
 let net =
   try match Sys.getenv "NET" with
@@ -25,6 +25,6 @@ let () =
   add_to_opam_packages ["mirage-http"];
   add_to_ocamlfind_libraries ["mirage-http"];
   register "stackv4" [
-    handler $ default_console $ stack;
+    handler $ default_console $ tap0 $ stack;
   ]
 
