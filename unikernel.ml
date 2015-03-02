@@ -117,8 +117,8 @@ module Main (C:CONSOLE)(N: NETWORK)(S:STACKV4) = struct
             T.write f stats_buf >>
             cmd_loop (n + (Cstruct.len b)) f 
 
-          | _ ->
-            C.log_s console (red "uknown command - read: %d bytes " n)
+          | c ->
+            C.log_s console (red "uknown command - %s - read: %d bytes " c n)
             >> cmd_loop (n + (Cstruct.len b)) f
             
           )
