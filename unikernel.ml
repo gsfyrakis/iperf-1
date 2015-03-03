@@ -165,5 +165,14 @@ module Main (C:CONSOLE)(N: NETWORK)(S:STACKV4) = struct
         iperf_rx_loop 0 flow
     );
 
-    S.listen s
+    let periodic_print time =
+      while_lwt true do 
+        OS.Time.sleep time >>
+          let ip = List.hd (S.IPV4.get_ip (S.ipv4 s)) in
+            C.log_s console (sprintf "IP address: %s\n" (Ipaddr.V4.to_string ip))
+      done
+    in
+    
+    lwt _ = (S.listen s) <&> (periodic_print 1.0) in
+      return ()
 end
