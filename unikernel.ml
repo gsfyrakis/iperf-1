@@ -169,7 +169,7 @@ module Main (C:CONSOLE)(N: NETWORK)(S:STACKV4) = struct
       while_lwt true do 
         OS.Time.sleep time >>
           let ip = List.hd (S.IPV4.get_ip (S.ipv4 s)) in
-            C.log_s console (sprintf "IP address: %s\n" (Ipaddr.V4.to_string ip))
+            C.log_s console (sprintf "IP address: @%s@\n" (Ipaddr.V4.to_string ip))
       done
     in
     
