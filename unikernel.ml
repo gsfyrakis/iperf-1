@@ -86,7 +86,17 @@ module Main (C:CONSOLE)(NCOM: NETWORK)(NLST: NETWORK)(COM:STACKV4)(LST:STACKV4) 
               )
             >>
             cmd_loop (n + (Cstruct.len b)) f
-            
+
+          | "start" ->
+            let ip = List.hd (LST.IPV4.get_ip (LST.ipv4 lst)) in
+            let _ = sendth ip iperf_rx_port in
+            C.log_s console
+              (yellow "attempting iperf connection to: %s:%d\n" 
+                (Ipaddr.V4.to_string ip) iperf_rx_port
+              )
+            >>
+            cmd_loop (n + (Cstruct.len b)) f
+
           | "stats" ->
             C.log_s console (yellow "information requested\n")
             >>
